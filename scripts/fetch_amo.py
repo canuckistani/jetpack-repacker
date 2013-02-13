@@ -17,7 +17,7 @@ except ImportError:
 
 con = None
 config_file = './amo_db_config.yml'
-download_dir = abspath('./addons')
+download_dir = abspath('../ftp')
 
 def getYaml(path):
     """ loadin' YAML files. """
@@ -44,10 +44,8 @@ def download(id, filename, download_dir, i, total_rows):
         reason = ''
         if hasattr(e, 'reason'):
             reason = e.reason
-        stdout.write("\nERR %s %s: %s %s\n" % ( e.code, reason, id, filename ))
-        stdout.flush()
-        err = {'code': e.code, 'reason': reason}
-        return err
+        stderr.write("%s %s: %s %s\n" % ( e.code, reason, id, filename ))
+        stderr.flush()
 
     h = u.info()
     totalSize = int(h["Content-Length"])
@@ -126,7 +124,8 @@ if __name__ == '__main__':
                 print "File already exists: %s" % filename
     except mdb.Error, e:
       
-        print "Error %d: %s" % (e.args[0],e.args[1])
+        stderr.write("Error %d: %s\n" % (e.args[0],e.args[1]))
+        stderr.flush();
         sys.exit(1)
         
     finally:    
