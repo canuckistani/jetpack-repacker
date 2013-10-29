@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 import os, re
-from sys import stdout
+from sys import stdout, stderr
 from os.path import join, abspath, isfile, isdir, exists, basename
 from shutil import copyfile, copytree, rmtree
 from time import strftime, strptime, localtime
@@ -17,12 +17,12 @@ except ImportError:
 
 con = None
 config_file = './amo_db_config.yml'
-download_dir = abspath('../ftp')
+download_dir = abspath('./xpis')
 
 def getYaml(path):
     """ loadin' YAML files. """
     if not exists(path):
-        raise "YAML file doesn't exist: %s" % path
+        raise Exception("YAML file doesn't exist: %s" % path)
     return load(file(path, 'r'), Loader)
 
 
@@ -46,6 +46,7 @@ def download(id, filename, download_dir, i, total_rows):
             reason = e.reason
         stderr.write("%s %s: %s %s\n" % ( e.code, reason, id, filename ))
         stderr.flush()
+	return
 
     h = u.info()
     totalSize = int(h["Content-Length"])
@@ -100,7 +101,8 @@ if __name__ == '__main__':
             dbConfig['database'],
         );
 
-        queries = getYaml('./queries.yml')
+        path = os.path.join(os.path.dirname(__file__), 'queries.yml')
+        queries = getYaml(path)
 
         cur = con.cursor()
         # repack_query_limit
@@ -129,11 +131,6 @@ if __name__ == '__main__':
         sys.exit(1)
         
     finally:    
-            
-        if con:    
+        if con:
             con.close()
-        
-        print len(errors)
 
-        if len(errors) > 0:
-            print errors

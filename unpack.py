@@ -9,7 +9,7 @@ import subprocess
 import hashlib
 import urllib
 
-JETPACK_HASH_URL = "https://raw.github.com/mattbasta/amo-validator/master/validator/testcases/jetpack_data.txt"
+JETPACK_HASH_URL = "https://raw.github.com/mozilla/amo-validator/master/validator/testcases/jetpack_data.txt"
 
 # Build a big hashtable that can be queried like this:
 # - for a package file:
@@ -142,7 +142,7 @@ def getAddonDependencies(options):
       return
 
     # We do not care about SDK packages dependencies
-    if packageName in ["addon-kit", "api-utils"]:
+    if packageName in ["addon-sdk", "addon-kit", "api-utils"]:
       return
 
     requirements = None
@@ -162,6 +162,12 @@ def getAddonDependencies(options):
         addModule("api-utils", "@packaging")
       elif reqname == "@loader":
         addModule("api-utils", "@loader")
+      elif reqname == "@loader/unload":
+        addModule("api-utils", "unload")
+      elif reqname == "@loader/options":
+        ()
+      elif reqname == "@l10n/data":
+        ()
       else:
         key = None
         if "path" in val: # SDK >= 1.4
@@ -172,7 +178,7 @@ def getAddonDependencies(options):
           key = val["url"]
         else:
           raise Exception("unknown form of requirements entry: " + str(val))
-        
+
         processEntry(manifest[key])
 
   
@@ -264,7 +270,8 @@ def getJidPrefix(manifest):
 # )
 def getPackagesFiles(zip, version, manifest, package):
   packagePath = None
-  if version[:2] == "1." and int(version[2]) >= 4:
+  parts = re.sub(r'(b|rc)\d+', '', version).split(".")
+  if int(parts[0]) >= 1 and int(parts[1]) >= 4:
     # SDK >=1.4 have simplified resources folder layout
     packagePath = package
   else:
@@ -326,16 +333,28 @@ def processAddon(path, args):
     print path + "; " + version + "; " + res + "; " + json.dumps(bad_files)
 
   elif args.action == "unpack":
-    bad_files = verify_addon(zip, version, manifest)
-    if not args.force and len(bad_files) > 0:
-      raise Exception("Unable to unpack because of wrong checksum or unknown files: ", bad_files)
+    bad_files = []
+    try:
+      bad_files = verify_addon(zip, version, manifest)
+    except Exception, e:
+      if not args.force:
+        raise e
+    finally:
+      if not args.force and len(bad_files) > 0:
+        raise Exception("Unable to unpack because of wrong checksum or unknown files: ", bad_files)
     unpack(zip, version, manifest, args.target)
     print path + " unpacked to " + args.target
 
   elif args.action == "repack":
-    bad_files = verify_addon(zip, version, manifest)
-    if not args.force and len(bad_files) > 0:
-      raise Exception("Unable to repack because of wrong checksum or unknown files: ", bad_files)
+    bad_files = []
+    try:
+      bad_files = verify_addon(zip, version, manifest)
+    except Exception, e:
+      if not args.force:
+        raise e
+    finally:
+      if not args.force and len(bad_files) > 0:
+        raise Exception("Unable to repack because of wrong checksum or unknown files: ", bad_files)
     repacked_path = repack(path, zip, version, manifest, args.target, args.sdk, args.force)
     if repacked_path:
       print "Successfully repacked", path, "to", repacked_path
@@ -346,13 +365,14 @@ def processAddon(path, args):
       print_diff(path, repacked_path, args.diffstat)
 
   elif args.action == "repackability":
+    bad_files = []
     try:
       bad_files = verify_addon(zip, version, manifest)
     except Exception, e:
-      print path + ": " + str(e)
+      print >> sys.stderr, path + ": " + str(e)
       return
     if not args.force and len(bad_files) > 0:
-      print path + ": checksum - Unable to repack because of wrong checksum or unknown files: " + str(bad_files)
+      print >> sys.stderr, path + ": checksum - Unable to repack because of wrong checksum or unknown files: " + str(bad_files)
       return
     sdk_path = os.path.join(args.sdks, version)
     if not os.path.exists(sdk_path):
@@ -366,16 +386,16 @@ def processAddon(path, args):
                              # We do not want bump either
                              bump=False)
     except Exception, e:
-      print path + ": " + str(e)
+      print >> sys.stderr, path + ": " + str(e)
       return
     if not repacked_path:
-      print path + ": error while repacking" 
+      print >> sys.stderr, path + ": error while repacking" 
       return
     diffs = report_diff(path, repacked_path)
     if len(diffs) == 0:
       print path + ": repackable [" + version + "]"
     else:
-      print path + ": " + ", ".join(diffs)
+      print >> sys.stderr, path + ": " + ", ".join(diffs)
 
   else:
     raise Exception("Unsupported action:", args.action)
@@ -402,13 +422,15 @@ def repack(path, zip, version, manifest, target, sdk_path, force=False, useInsta
   unpack(zip, version, manifest, tmp, useInstallRdfId=useInstallRdfId, bump=bump)
   
   # Execute `cfx xpi`
-  shell = False
-  if sys.platform == 'win32':
-    shell = True
   cfx_cmd = "cfx xpi"
   if bump:
     cfx_cmd = cfx_cmd + " --harness-option=repack=true"
-  cmd = ["bash", "-c", "source bin/activate && cd " + tmp + " && " + cfx_cmd]
+  if sys.platform == 'win32':
+    shell = True
+    cmd = ["cmd", "/C", "bin\\activate && cd " + tmp + " && " + cfx_cmd]
+  else:
+    shell = False
+    cmd = ["bash", "-c", "source bin/activate && cd " + tmp + " && " + cfx_cmd]
   cwd = sdk_path
   p = subprocess.Popen(cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=shell)
   std = p.communicate()
@@ -422,9 +444,9 @@ def repack(path, zip, version, manifest, target, sdk_path, force=False, useInsta
     shutil.move(tmpXpiPath, xpi_path)
 
   else:
-    print "Error while building the new xpi: "
-    print std[0]
-    print std[1]
+    print >> sys.stderr, "Error while building the new xpi: "
+    print >> sys.stderr, std[0]
+    print >> sys.stderr, std[1]
     xpi_path = False
 
   # Delete the temporary folder
@@ -588,8 +610,12 @@ def unpack(zip, version, manifest, target, useInstallRdfId=True, bump=True):
     raise Exception("Unable to unpack in an non-empty directory", target)
   packages = getPackages(manifest)
 
-  packages.remove("addon-kit")
-  packages.remove("api-utils")
+  if "addon-sdk" in packages: # > 1.12 with new layout
+    packages.remove("addon-sdk")
+  if "addon-kit" in packages:
+    packages.remove("addon-kit")
+  if "api-utils" in packages:
+    packages.remove("api-utils")
   if len(packages) != 1:
     raise Exception("We are only able to unpack/repack addons without extra packages ", packages)
   os.mkdir(os.path.join(target, "lib"))
@@ -607,6 +633,9 @@ def unpack(zip, version, manifest, target, useInstallRdfId=True, bump=True):
     if not section in ["lib", "data"]:
       raise Exception("Unexpected section folder name: " + section)
     destFile = os.path.join(target, section, relpath)
+    # For some reason Zip.extract(info), info.filename should be a relative path
+    destFile = os.path.relpath(destFile, os.getcwd())
+  
     # We have to use zipinfo object in order to extract a file to a different
     # path, then we have to replace `\` in windows as zip only uses `/`
     info = zip.getinfo(file)
@@ -762,10 +791,10 @@ parser.add_argument("path",
 args = parser.parse_args()
 
 if args.action == "repack" and not args.sdk:
-  print "`repack` requires --sdk option to be given."
+  print >> sys.stderr, "`repack` requires --sdk option to be given."
   sys.exit()
 elif args.action == "repackability" and not args.sdks:
-  print "`repackability` requires --sdks option to be given."
+  print >> sys.stderr, "`repackability` requires --sdks option to be given."
   sys.exit()
 
 if args.batch:
@@ -778,7 +807,7 @@ if args.batch:
       if os.path.isdir(path) or os.path.splitext(path)[1] == "xpi":
         processAddon(path, args)
     except Exception, e:
-      print "Unable to", args.action, path, ": ", e
+      print >> sys.stderr, "Unable to", args.action, path, ": ", e
 else:
   processAddon(args.path, args)
 
