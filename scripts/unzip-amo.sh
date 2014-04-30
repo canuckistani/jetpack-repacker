@@ -10,15 +10,16 @@ SRC_DIR=$2
 # AMO script only download jetpack addons
 KIND=jetpack
 
-mkdir -p $SRC_DIR/jetpack
+# echo "$FTP_DIR :: $SRC_DIR"
+# exit;
+
+mkdir -p $SRC_DIR && rm -fr $SRC_DIR/* # keep it clean
 
 for XPI in $(ls -d $FTP_DIR/*.xpi)
 do
   ID=$(basename $XPI)
-  # echo $XPI $KIND $ID
-  DST_DIR=$SRC_DIR/$KIND/$ID
+  DST_DIR=$SRC_DIR/$ID
   mkdir -p $DST_DIR
-  echo $XPI $DST_DIR
-  unzip $XPI $DST_DIR && echo "unziped $ID" || echo "Failed to unzip $ID"
-#  unzip -oq $XPI -d $DST_DIR || echo "Failed to unzip $ID"
+  # echo "unzip $XPI -d $DST_DIR"
+  unzip $XPI -d $DST_DIR
 done
